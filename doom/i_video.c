@@ -164,6 +164,20 @@ void cmap_to_fb(uint8_t *out, uint8_t *in, int in_pixels)
     struct color c;
     uint32_t pix;
 
+    // Fast path for the common case: 32bpp output at exactly 2x upscale.
+    // Two side-by-side copies of one pixel is one 8-byte write instead of
+    // two 4-byte writes, and skips the per-pixel bpp branch entirely.
+    if (s_Fb.bits_per_pixel == 32 && fb_scaling == 2)
+    {
+        uint64_t *out64 = (uint64_t *)out;
+        for (i = 0; i < in_pixels; i++)
+        {
+            uint64_t p = packed_colors[in[i]];
+            out64[i] = p | (p << 32);
+        }
+        return;
+    }
+
     for (i = 0; i < in_pixels; i++)
     {
         if (s_Fb.bits_per_pixel == 16)
