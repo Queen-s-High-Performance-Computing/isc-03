@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=00:05:00
+#SBATCH --time=00:15:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=1G
 #SBATCH --output=test-%j.out
