@@ -9,7 +9,10 @@
 set -euo pipefail
 
 DEMO=${1:-demo1}
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# $0 points at Slurm's spooled copy of this script when run via sbatch, not
+# the real repo, so prefer SLURM_SUBMIT_DIR (set by salloc/sbatch) and only
+# fall back to self-locating via $0 when run outside a Slurm job.
+ROOT=${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
 
 module load gcc
 
