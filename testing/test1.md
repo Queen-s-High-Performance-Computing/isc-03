@@ -99,3 +99,23 @@ perf report -i perf.data --stdio
 **Explains the -O2/-O3 plateau:** this loop has a runtime branch and manual byte-stores inside it, which resist auto-vectorization — so compiler flags alone couldn't speed up the actual hot spot.
 
 **Revised priority — supersedes the run.sh re-exec hypothesis above:** the `launcher.c` re-exec fix is still real but clearly secondary. First target now: `cmap_to_fb`/`I_FinishUpdate` in `doom/i_video.c` (editable — only `platform.c` is locked). Concrete first moves: hoist the `bits_per_pixel` branch out of the per-pixel loop (it's invariant per run), and special-case `fb_scaling == 2` to write wider chunks instead of the scalar inner loop.
+
+## `i_video.c` fix — three changes, committed separately on `lucas`
+
+1. **`made pixel packing update`** (`431a808`) — precompute `packed_colors[256]` (the fully packed 32bpp pixel) once per `I_SetPalette` call, instead of redoing the shift/OR packing per pixel per tic in `cmap_to_fb`.
+2. **`ccfcb1e`** — fast path in `cmap_to_fb` for the actual case (32bpp, `fb_scaling == 2`): one 8-byte store of `pix | (pix << 32)` instead of a per-pixel branch + loop of two 4-byte stores.
+3. **`f141ad7`** — `I_FinishUpdate`'s vertical-upscale loop called `cmap_to_fb` twice per source row with the *same* `line_in` both times, redoing identical work. Now converts once and `memcpy`s the duplicate row.
+
+All three preserve output bit-for-bit (verified by tracing: `packed_colors` is always built after `I_InitGraphics` sets `s_Fb.bits_per_pixel`, before any `I_SetPalette` call can run — confirmed via `d_main.c`'s `D_DoomLoop`/`doomgeneric_Tick` call order).
+
+**Result — demo1, 30s, 1 run, all three changes applied:**
+
+```
+Scoring demo1: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 145 valid demos, 0 invalid
+SCORE: 145 valid demo1 demos in 30s (median of 1)
+```
+
+**145 valid / 0 invalid** — up from the 64/0 baseline (and the 64/0 `-O2`/`-O3` results). **2.27x improvement**, 0 invalid demos, so validation still passes. Matches the prediction from the `perf` data: `I_FinishUpdate` was 72% of per-invocation cycles, so cutting its cost sharply should cut total time-per-invocation sharply too — and since `run.sh`'s restart loop just packs in as many completions as it can in the fixed 30s window, a faster binary directly raises the count without touching `run.sh` at all.
+
+Next: re-check demo2/demo3 (RULES.md — scoring demo is announced at scoring time, must be fast on all three), then revisit the `launcher.c` re-exec fix now that `I_FinishUpdate` isn't dominating as much, and test at full-node scale before trusting this generalizes.
