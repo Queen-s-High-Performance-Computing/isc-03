@@ -132,6 +132,11 @@ typedef struct
 
 static uint16_t rgb565_palette[256];
 
+// colors[] packed into s_Fb's actual pixel layout, so cmap_to_fb doesn't
+// redo this packing for every pixel of every tic. Only valid for 32bpp;
+// rebuilt whenever I_SetPalette runs.
+static uint32_t packed_colors[256];
+
 void cmap_to_rgb565(uint16_t * out, uint8_t * in, int in_pixels)
 {
     int i, j;
@@ -161,10 +166,9 @@ void cmap_to_fb(uint8_t *out, uint8_t *in, int in_pixels)
 
     for (i = 0; i < in_pixels; i++)
     {
-        c = colors[*in];  // R:8 G:8 B:8
-
         if (s_Fb.bits_per_pixel == 16)
         {
+            c = colors[*in];  // R:8 G:8 B:8
             // RGB565 packing
             uint16_t p = ((c.r & 0xF8) << 8) |
                          ((c.g & 0xFC) << 3) |
@@ -180,14 +184,9 @@ void cmap_to_fb(uint8_t *out, uint8_t *in, int in_pixels)
         }
         else if (s_Fb.bits_per_pixel == 32)
         {
-            // Assuming RGBA8888
-            pix = (c.r << s_Fb.red.offset) |
-                  (c.g << s_Fb.green.offset) |
-                  (c.b << s_Fb.blue.offset);
+            // Assuming RGBA8888 - already packed once in I_SetPalette
+            pix = packed_colors[*in];
 
-#ifdef SYS_BIG_ENDIAN
-            pix = swapLE32(pix);
-#endif
             for (k = 0; k < fb_scaling; k++) {
                 *(uint32_t *)out = pix;
                 out += 4;
@@ -410,6 +409,16 @@ void I_SetPalette (byte* palette)
         colors[i].r = gammatable[usegamma][*palette++];
         colors[i].g = gammatable[usegamma][*palette++];
         colors[i].b = gammatable[usegamma][*palette++];
+
+        if (s_Fb.bits_per_pixel == 32) {
+            uint32_t pix = (colors[i].r << s_Fb.red.offset) |
+                           (colors[i].g << s_Fb.green.offset) |
+                           (colors[i].b << s_Fb.blue.offset);
+#ifdef SYS_BIG_ENDIAN
+            pix = swapLE32(pix);
+#endif
+            packed_colors[i] = pix;
+        }
     }
 
 #ifdef CMAP256
