@@ -351,10 +351,12 @@ void I_FinishUpdate (void)
     line_out = (unsigned char *) DG_ScreenBuffer;
 
     y = SCREENHEIGHT;
+    size_t row_bytes = SCREENWIDTH * fb_scaling * (s_Fb.bits_per_pixel/8);
 
     while (y--)
     {
         int i;
+        unsigned char *row_start = NULL;  // first converted copy of this source row
         for (i = 0; i < fb_scaling; i++) {
             line_out += x_offset;
 #ifdef CMAP256
@@ -371,10 +373,16 @@ void I_FinishUpdate (void)
                 }
             }
 #else
-            //cmap_to_rgb565((void*)line_out, (void*)line_in, SCREENWIDTH);
-            cmap_to_fb((void*)line_out, (void*)line_in, SCREENWIDTH);
+            // Vertical upscale duplicates this row fb_scaling times; convert
+            // it once and memcpy the rest instead of recomputing from line_in.
+            if (i == 0) {
+                cmap_to_fb((void*)line_out, (void*)line_in, SCREENWIDTH);
+                row_start = line_out;
+            } else {
+                memcpy(line_out, row_start, row_bytes);
+            }
 #endif
-            line_out += (SCREENWIDTH * fb_scaling * (s_Fb.bits_per_pixel/8)) + x_offset_end;
+            line_out += row_bytes + x_offset_end;
         }
         line_in += SCREENWIDTH;
     }
