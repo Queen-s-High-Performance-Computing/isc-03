@@ -102,6 +102,56 @@ Submit it with `sbatch ~/test.sh`. The results appear in `test-<jobid>.out`, and
 
 **Week-1 checkpoint (November 9):** post a screenshot of your first `SCORE:` line in the club channel.
 
+## Rendering optimization
+
+`R_DrawColumn` now keeps texture/light-table pointers local and draws four
+pixels per loop iteration. Local comparisons measured 1.7–4.0% less full-demo
+CPU time across demo1–demo3, with all 30 comparison runs valid. These are local
+measurements, not competition scores. See [the optimization notes](testing/drawcolumn.md)
+for results and correctness checks. OpenAI Codex helped inspect, implement, and
+test this change.
+
+Run the column correctness checks and optional isolated benchmark:
+
+```bash
+bash testing/test_drawcolumn.sh
+bash testing/test_drawcolumn.sh --bench
+```
+
+## Local function profiling (no Slurm required)
+
+With GCC, make, binutils (`gprof`), and optionally Linux perf installed:
+
+```bash
+bash scripts/run-perf.sh demo1
+bash scripts/run-perf.sh demo2
+bash scripts/run-perf.sh demo3
+```
+
+The script probes user-space hardware cycles and software CPU-clock events. If
+perf is unavailable or the kernel blocks both, it uses `gprof` CPU-time sampling
+over 20 complete demo invocations. This produces a function profile, rather than
+a throughput score. Set `RUNS=5` for a shorter gprof collection. Force a backend
+with `bash scripts/run-perf.sh demo1 perf` or `... demo1 gprof`.
+
+Each run saves its build, raw profiles, validation log, environment summary, and
+report in a fresh `results/profile-demo*-*/` directory. Profile builds use `-O3`,
+debug symbols, and frame pointers, plus `-pg` for gprof, in separate build
+directories. Every demo must pass the reference check. The engine normally exits
+255 after a successful timedemo; the validator determines whether it was valid.
+Existing cluster reports are preserved.
+
+gprof adds profiling overhead, and local hardware differs from Frontenac. Use
+the results to choose code to investigate, then confirm improvements on the
+scoring hardware. On Frontenac, run profiling only inside a compute allocation;
+direct `sbatch scripts/run-perf.sh` submission must be made from the repo root.
+
+Recorded findings:
+
+- [Local function profiles](testing/local-profile.md)
+- [Startup/loading measurements](testing/loading-profile.md)
+- [R_DrawColumn comparison](testing/drawcolumn.md)
+
 ## Common problems
 
 | Problem | Fix |
