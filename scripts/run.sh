@@ -21,7 +21,7 @@ for i in $(seq 0 $((COPIES - 1))); do
     (
         cd "$workdir"
         while true; do
-            "$DOOM_BIN" -iwad "$DOOM_IWAD" -timedemo "$DOOM_DEMO" || true
+            "$DOOM_BIN" -iwad "$DOOM_IWAD" -timedemo "$DOOM_DEMO" -nogui || true
         done
     ) > "$RESULTS_DIR/w$i.log" 2>&1 &
 done
