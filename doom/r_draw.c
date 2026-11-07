@@ -105,6 +105,8 @@ void R_DrawColumn (void)
     byte*		dest; 
     fixed_t		frac;
     fixed_t		fracstep;	 
+    const byte *source;
+    const lighttable_t *colormap;
  
     count = dc_yh - dc_yl; 
 
@@ -127,21 +129,36 @@ void R_DrawColumn (void)
     // Determine scaling,
     //  which is the only mapping to be done.
     fracstep = dc_iscale; 
-    frac = dc_texturemid + (dc_yl-centery)*fracstep; 
+    frac = dc_texturemid + (dc_yl-centery)*fracstep;
 
-    // Inner loop that does the actual texture mapping,
-    //  e.g. a DDA-lile scaling.
-    // This is as fast as it gets.
-    do 
+    // The framebuffer stores cannot change these pointers during a column.
+    // Keep local copies so byte writes do not force per-pixel global reloads.
+    source = dc_source;
+    colormap = dc_colormap;
+
+    // Draw four pixels per iteration to reduce loop-control overhead.
+    // The scalar tail handles short columns and any remaining pixels.
+    ++count;
+    while (count >= 4)
     {
-	// Re-map color indices from wall texture column
-	//  using a lighting/special effects LUT.
-	*dest = dc_colormap[dc_source[(frac>>FRACBITS)&127]];
-	
-	dest += SCREENWIDTH; 
-	frac += fracstep;
-	
-    } while (count--); 
+        dest[0] = colormap[source[(frac >> FRACBITS) & 127]];
+        frac += fracstep;
+        dest[SCREENWIDTH] = colormap[source[(frac >> FRACBITS) & 127]];
+        frac += fracstep;
+        dest[SCREENWIDTH * 2] = colormap[source[(frac >> FRACBITS) & 127]];
+        frac += fracstep;
+        dest[SCREENWIDTH * 3] = colormap[source[(frac >> FRACBITS) & 127]];
+        frac += fracstep;
+        dest += SCREENWIDTH * 4;
+        count -= 4;
+    }
+    while (count-- > 0)
+    {
+        // Re-map texture indices through the lighting table.
+        *dest = colormap[source[(frac >> FRACBITS) & 127]];
+        dest += SCREENWIDTH;
+        frac += fracstep;
+    }
 } 
 
 
