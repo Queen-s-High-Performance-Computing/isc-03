@@ -155,3 +155,39 @@ Exact-output harness passes 6000/6000 here too, and the isolated speedup (~1.55x
 **Cluster verification is pending — Frontenac is currently heavily loaded.** The teammate's 1.6-4% figure is from an unrelated 4-vCPU VM, not the scoring node, so it should not be treated as the actual competition gain. Committed anyway since local correctness is solid and the change is low-risk; `score.sh` numbers against the 145/0 baseline are still needed before calling this a confirmed win.
 
 Next: once Frontenac frees up, run `scripts/score.sh demo1 30 1` then `demo2`/`demo3`, compare demo1's valid count to the 145/0 baseline, and log the real numbers here.
+
+## Cluster verification — `R_DrawColumn` + `-nogui`, all three demos + fresh profile
+
+Frontenac freed up. Ran `sbatch testing/test.sh` (now scores demo1/2/3 and runs `run-perf.sh demo1` in one job, to avoid spending a separate queue wait on each), 16 CPUs, 30s per demo:
+
+```
+Scoring demo1: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 150 valid demos, 0 invalid
+SCORE: 150 valid demo1 demos in 30s (median of 1)
+Scoring demo2: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 156 valid demos, 0 invalid
+SCORE: 156 valid demo2 demos in 30s (median of 1)
+Scoring demo3: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 148 valid demos, 0 invalid
+SCORE: 148 valid demo3 demos in 30s (median of 1)
+timed 7117 gametics in 79 realtics (3153.101318 fps)
+```
+
+**demo1: 150 valid / 0 invalid** — up from the 145/0 post-`i_video.c` baseline (+5 demos, +3.4%) and from the original 64/0 baseline (2.34x). Smaller than the isolated-loop/local numbers predicted alone, but real and in the expected direction — consistent with `R_DrawColumn` being ~22% of the frame and the teammate's own finding that full-demo gains are much smaller than isolated-loop gains.
+
+**demo2: 156 valid / 0 invalid, demo3: 148 valid / 0 invalid** — first time either has been measured since the original 64/0 baseline (the `i_video.c` fixes were only re-checked against demo1 at the time; see "Next" note on that entry, never followed up until now). So these numbers bundle *all* fixes to date (`i_video.c` x3 + `R_DrawColumn` + `-nogui`) relative to 64/0 — 2.4x and 2.3x respectively. All three demos still validate at 0 invalid, so the tic-count/fingerprint tolerance holds.
+
+The last line (`timed 7117 gametics in 79 realtics, 3153 fps`) is the single profiled `run-perf.sh demo1` invocation at the end of the job — confirms that run completed and matches the known demo1 length (~7116-7117 gametics).
+
+**Fresh `perf report` from that same run** (self-%, post `R_DrawColumn`/`-nogui`):
+
+```
+22%    I_FinishUpdate   (doom/i_video.c)
+15%    R_DrawColumn     (doom/r_draw.c)
+ 8.2%  R_DrawSpan       (doom/r_draw.c)
+ 5.8%  R_RenderSegLoop  (doom/r_segs.c)
+```
+
+`R_DrawColumn` dropped 22.47% → 15%, as expected from the fix. **`I_FinishUpdate` is the top hotspot again (19.48% → 22%)** — not because it got slower, but because the rest of the frame got relatively smaller around it (Amdahl's law: fixing the biggest piece makes the untouched pieces a bigger share of what's left). The three prior `I_FinishUpdate` fixes clearly still hold (nowhere near the original 72%), but there's real cost left in `cmap_to_fb`'s per-pixel colormap lookup/store loop — a data-dependent gather, the same fundamental shape of problem as `R_DrawColumn`'s texture lookup.
+
+Next: decide between pushing further on `I_FinishUpdate` (biggest remaining piece, 22%, but the easy wins are already taken) vs. the already-designed `R_RenderSegLoop` branch-hoist (smaller, 5.8%, but lower-risk and not yet attempted).
