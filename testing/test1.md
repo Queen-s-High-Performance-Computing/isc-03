@@ -203,3 +203,25 @@ Verified behavior-preservation by reading `R_StoreWallRange` in full: none of th
 No isolated unit-test harness for this one (unlike `R_DrawColumn`) — mocking `ceilingclip`/`floorclip`/`ceilingplane`/`floorplane`/`colfunc` dispatch realistically would cost more than it buys here; this is a pure control-flow refactor with an exhaustively-reviewed diff (every changed line is a global→local swap, nothing else moved). The real check is `scripts/score.sh`'s own tic-count/fingerprint validation, same as how the `i_video.c` fixes were verified — pending the next Frontenac window.
 
 Next: once cluster access is available again, rebuild and run `scripts/score.sh demo1/demo2/demo3 30 1`, compare against the 150/156/148 baseline from the entry above, and log the real numbers here.
+
+## Cluster verification — `R_RenderSegLoop` branch hoist
+
+Ran `sbatch testing/test.sh` twice (job outputs `test-12433521.out` and `test-12453781.out`, both committed at repo root). The first predates this change and reproduced the prior baseline exactly — **150/156/148**, 0 invalid, identical to the entry above — good confirmation that baseline is stable/reproducible, not a one-off. The second is post-`R_RenderSegLoop`:
+
+```
+Scoring demo1: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 158 valid demos, 0 invalid
+SCORE: 158 valid demo1 demos in 30s (median of 1)
+Scoring demo2: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 157 valid demos, 0 invalid
+SCORE: 157 valid demo2 demos in 30s (median of 1)
+Scoring demo3: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 146 valid demos, 0 invalid
+SCORE: 146 valid demo3 demos in 30s (median of 1)
+```
+
+**demo1: 158/0** (up from 150, +8, +5.3%), **demo2: 157/0** (up from 156, +1, +0.7%), **demo3: 146/0** (down from 148, -2, -1.4%). All still 0 invalid, so the branch-hoist didn't break anything — matches the exhaustive diff review (every change was a global→local read swap, nothing else moved). demo1's gain is a believable win for removing ~7 redundant branches/global-reloads per column across every visible wall segment's columns. demo3's small dip is most likely single-run noise (these are `median of 1`, not repeated runs, and node load on a shared cluster varies) rather than a regression — nothing in the diff should behave differently per-demo, so there's no mechanism for this change to selectively help demo1/2 and hurt demo3. Not re-running to confirm given the queue cost; flagging as a loose end rather than overclaiming a 3-for-3 win.
+
+One gap in this job's log: `run-perf.sh demo1` captured a fresh `perf.data` (4619 samples, confirmed in the log) but the log cuts off right after the capture — the `perf report --stdio > perf-report.txt` step and its "Report written to..." echo never appear in `test-12453781.out`. `perf-report.txt` itself should still exist on the cluster filesystem since that command runs before the echo; just need to `cat` it directly next time rather than relying on the job's captured stdout.
+
+Next: get the actual `perf-report.txt` off the cluster to see whether `R_RenderSegLoop`'s self-% dropped as expected, then decide the next target (likely `I_FinishUpdate`, still the largest piece as of the last profile at 22%).
