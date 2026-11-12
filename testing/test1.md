@@ -225,3 +225,16 @@ SCORE: 146 valid demo3 demos in 30s (median of 1)
 One gap in this job's log: `run-perf.sh demo1` captured a fresh `perf.data` (4619 samples, confirmed in the log) but the log cuts off right after the capture — the `perf report --stdio > perf-report.txt` step and its "Report written to..." echo never appear in `test-12453781.out`. `perf-report.txt` itself should still exist on the cluster filesystem since that command runs before the echo; just need to `cat` it directly next time rather than relying on the job's captured stdout.
 
 Next: get the actual `perf-report.txt` off the cluster to see whether `R_RenderSegLoop`'s self-% dropped as expected, then decide the next target (likely `I_FinishUpdate`, still the largest piece as of the last profile at 22%).
+
+**Got the report.** Self-% from that same `perf.data` (4619 samples, demo1):
+
+```
+21.86%  I_FinishUpdate   (was 22%)
+16.90%  R_DrawColumn     (was 15%)
+ 9.48%  R_DrawSpan       (was 8.2%)
+ 5.05%  R_RenderSegLoop  (was 5.8%)
+```
+
+`R_RenderSegLoop` dropped 5.8% → 5.05%, directionally consistent with the branch-hoist (fewer redundant reloads/branches per column). `I_FinishUpdate`/`R_DrawColumn`/`R_DrawSpan` all shifted up slightly even though none of them were touched — same Amdahl's-law effect as before (shrink one piece, the rest get relatively bigger in what's left), not a regression. Caveat: at only ~4619 total samples, a function sitting at 5-6% has roughly ±0.3-0.4 percentage points of sampling noise on its own, so this single profile's RenderSegLoop delta is suggestive but not rock-solid by itself — the `score.sh` demo1 valid-count increase (+8, +5.3%, logged above) is the more trustworthy signal that the change is a real (if modest) win.
+
+`I_FinishUpdate` is still the largest single hotspot (21.86%, essentially flat vs. before — consistent with it not being touched this round) and `R_DrawSpan` (9.48%) is now the largest *untouched* renderer function, in the same shape as the already-fixed `R_DrawColumn` (pointer-cache + unroll pattern, already proven twice). Next target decision: dig into `I_FinishUpdate`'s harder residual (biggest prize, already past the easy wins) vs. apply the proven `R_DrawColumn`-style fix to `R_DrawSpan` (smaller prize, lower risk, same recipe).
