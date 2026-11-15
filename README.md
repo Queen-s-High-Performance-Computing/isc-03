@@ -109,7 +109,7 @@ Full write-up, with how each change works and what it measured:
 
 | Change | Where | Effect |
 |---|---|---|
-| `-O3` instead of `-Os` | `doom/Makefile` | Needed for the rest; no change alone |
+| `-O3 -flto` instead of `-Os` | `doom/Makefile` | `-O3` needed for the rest; `-flto` ~4% less CPU (local) |
 | Palette packed once, 2x fast path, each row converted once | `i_video.c` | frnt201 demo1: 64 -> 145 |
 | Doubled-pixel palette, dedicated 2x function | `i_video.c` | ~1-3% less CPU (local) |
 | Local pointers + 4x unroll | `r_draw.c` (`R_DrawColumn`, `R_DrawSpan`) | frnt201 demo1: 145 -> 150, 158 -> 162 |
@@ -120,6 +120,17 @@ Full write-up, with how each change works and what it measured:
 Tests: `bash testing/test_drawcolumn.sh`, `bash testing/test_drawspan.sh`,
 `bash testing/test_finishupdate.sh`. Profiling: `bash scripts/run-perf.sh demo1`
 or `bash scripts/run-callgrind.sh demo1`.
+
+### Submission summary
+
+- **Best score:** TODO, fill in after `scripts/score.sh <demo> 120 3` on the
+  full node (say which demo).
+- **What we changed and why it helped:** see the table above and
+  [CHANGES.md](CHANGES.md).
+- **What limits us now:** CPU time in rendering and in `I_FinishUpdate`, which
+  has to write 1 MB per frame. With 128 copies, those output buffers add up
+  to more than the L3 cache, so memory bandwidth is probably the next limit.
+  Start-up is only ~9 ms per demo, and I/O is negligible.
 
 ### AI tools
 

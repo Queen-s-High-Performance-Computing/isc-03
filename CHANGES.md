@@ -39,14 +39,14 @@ the same binary twice moved the score by up to ~3% (demo3 went from 146 to
 | + R_RenderSegLoop | 158 | 157 | 146 |
 | + R_DrawSpan | 162 | 163 | 146 |
 | same build, rerun | 161 | 164 | 151 |
-| + I_FinishUpdate change 4, melt fix | not measured yet | | |
+| + I_FinishUpdate change 5, melt fix, `-flto` | not measured yet | | |
 
 The melt fix (change 7) is the one we expect to move the score most. It
 still needs a cluster run.
 
 ## The changes
 
-### 1. Compiler flags: `-Os` -> `-O3` (`doom/Makefile`)
+### 1. Compiler flags: `-Os` -> `-O3 -flto` (`doom/Makefile`)
 
 The starter kit optimised for size. We switched to `-O3`. On its own this
 didn't change the score (64 -> 64), because almost all the time was in
@@ -54,8 +54,10 @@ didn't change the score (64 -> 64), because almost all the time was in
 as written. It helps the later changes, since they're written so the
 compiler can optimise them.
 
-Tested since, locally: adding `-flto` cuts CPU time by about 4%. Not applied
-yet. `-march=native` and PGO gave nothing extra.
+We later added `-flto` (link-time optimisation, which lets GCC optimise
+across source files). Locally that cut CPU time by about 4% (0.85 -> 0.82 s
+on demo1), and all three demos still validate. `-march=native` and PGO gave
+nothing extra, so we didn't use them.
 
 ### 2. I_FinishUpdate: pack the palette once (`doom/i_video.c`)
 
@@ -223,16 +225,15 @@ several demos per process wouldn't gain much.
 
 Rough order of expected payoff:
 
-1. Add `-flto` to the Makefile (~4% CPU, measured locally).
-2. R_DrawColumn: walls call it through the `colfunc` function pointer, so it
+1. R_DrawColumn: walls call it through the `colfunc` function pointer, so it
    can never be inlined. Call it directly from `R_RenderSegLoop`. Also remove
    the leftover-pixel loop, which is where most of its mispredicted branches
    are.
-3. I_FinishUpdate: skip rows that haven't changed since the last frame (the
+2. I_FinishUpdate: skip rows that haven't changed since the last frame (the
    status bar is 16% of the screen and rarely changes). Output is still the
    full correct frame, but it reuses the previous frame, so check with the
    organizers first (rule 3).
-4. Full node: 128 copies x 1 MB output buffer is more than the L3 cache. Try
+3. Full node: 128 copies x 1 MB output buffer is more than the L3 cache. Try
    64 copies (one per physical core) against 128, and huge pages for the
    buffer.
 

@@ -2,7 +2,7 @@
 # Baseline flags are deliberately conservative (-Os optimizes for size).
 
 CC      = gcc
-CFLAGS  += -ggdb3 -O3 -Wall -DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE
+CFLAGS  += -ggdb3 -O3 -flto -Wall -DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE
 LDFLAGS += -Wl,--gc-sections
 LIBS    += -lm -lc
 
