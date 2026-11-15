@@ -266,7 +266,9 @@ SCORE: 146 valid demo3 demos in 30s (median of 1)
 timed 7117 gametics in 78 realtics (3193.525635 fps)
 ```
 
-**demo1: 162/0** (up from 158, +4, +2.5%), **demo2: 163/0** (up from 157, +6, +3.8%), **demo3: 146/0** (unchanged from 146 — the prior dip held steady rather than bouncing back, suggesting it wasn't pure noise after all, just not something this change affects either way). All still 0 invalid.
+**demo1: 162/0** (up from 158, +4, +2.5%), **demo2: 163/0** (up from 157, +6, +3.8%), **demo3: 146/0** (unchanged from 146). All still 0 invalid.
+
+**Correction (see entry below):** a same-code rerun right after this one moved demo3 to 151 with zero code changes in between. So demo3 holding at exactly 146 twice in a row was coincidence, not a stable effect — the "wasn't pure noise after all" read on that was wrong. Flagging the correction here rather than quietly editing the old claim away.
 
 Running total since the original 64/0 baseline: demo1 2.53x, demo2 2.55x, demo3 2.28x. Same log-gap as before — the job's captured stdout doesn't show the `perf report`/"Report written to..." lines, just the profiled run's own completion; `perf-report.txt` should still exist on the cluster filesystem for a direct `cat` next time.
 
@@ -281,3 +283,40 @@ Fix: capture `perf record`'s exit status explicitly and only treat it as a real 
 Note: the percentages already logged above (22%/15%/8.2%/5.8% after the `R_DrawColumn` fix, and the full 21.86%/16.90%/9.48%/5.05% breakdown after `R_RenderSegLoop`) are still trustworthy — `perf.data` itself was freshly recorded both times (confirmed by matching sample counts and the correct demo1 tic count in each job's log), so those came from real contemporaneous captures, not from the stale file. This bug only ever affected the `perf-report.txt` *file* on disk, which the broken script simply never got around to regenerating — whatever produced those earlier pasted numbers must have read `perf.data` a different way (most likely `perf report` run by hand), sidestepping the broken redirect step.
 
 Next: with the fix in place, `sbatch testing/test.sh` should finally make `scripts/run-perf.sh`'s own `perf-report.txt` file match reality, so a plain `cat` works going forward instead of needing to run `perf report` by hand.
+
+## Rerun on unchanged code — confirms noise, confirms the `run-perf.sh` fix works
+
+Ran `sbatch testing/test.sh` again with no code changes since the `R_DrawSpan` commit (predates the `WAD-loading split` / fork commit below):
+
+```
+Scoring demo1: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 161 valid demos, 0 invalid
+SCORE: 161 valid demo1 demos in 30s (median of 1)
+Scoring demo2: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 164 valid demos, 0 invalid
+SCORE: 164 valid demo2 demos in 30s (median of 1)
+Scoring demo3: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 151 valid demos, 0 invalid
+SCORE: 151 valid demo3 demos in 30s (median of 1)
+```
+
+demo1 161 (was 162, -1), demo2 164 (was 163, +1), demo3 **151 (was 146, +5)** — on literally the same binary. This is the clean confirmation that single-run `score.sh` numbers carry real noise on the order of a few demos (up to ~3%), which is the right lens for reading every delta logged in this file: treat anything smaller than that as "can't tell from one run," not as a real effect.
+
+`perf-report.txt` finally regenerated for real this time (first full capture since the `run-perf.sh` fix):
+
+```
+20.11%  I_FinishUpdate     (doom/i_video.c)
+16.52%  R_DrawColumn       (doom/r_draw.c)
+ 8.24%  R_DrawSpan         (doom/r_draw.c)
+ 5.22%  R_RenderSegLoop    (doom/r_segs.c)
+ 4.61%  R_MakeSpans        (doom/r_plane.c)
+ 3.90%  R_DrawMaskedColumn (doom/r_draw.c)
+```
+
+Close to the last (manually-obtained) reading (21.86/16.90/9.48/5.05) — small movements, consistent with the same sampling noise just measured directly above, and good cross-validation that those earlier manual numbers were trustworthy despite the broken file. Two new candidates visible now that weren't shown in the earlier truncated pastes: `R_MakeSpans` (4.61%) and `R_DrawMaskedColumn` (3.90%) — smaller than anything tackled so far, noted for completeness, not an immediate priority next to `I_FinishUpdate` still sitting at 20%.
+
+## `108e052` — "made WAD-loading split" (not mine; same git identity)
+
+A commit landed directly on `lucas` implementing the re-exec-avoidance idea the original handoff shelved, via a different mechanism than what was analyzed back then: `launcher.c` now calls `doomgeneric_Create()` once (the expensive WAD load/precache), then `fork()`s a fresh child per demo, each child running a newly-split-out `D_DoomMain_PlayDemo()` tail. Because each repetition is a real forked child (not a loop inside one process), `gametic` and all other per-demo state start fresh from the parent's post-`ST_Init()` snapshot every time — sidestepping the exact blocker (`gametic` never resetting, breaking `A_Tracer` and the scorer's demo-boundary detection) that got the original plan shelved, without touching any gametic-dependent logic at all. Comes with its own validation script, `testing/test2.sh` (smoke-checks that one process completes multiple demos, then runs the real scorer).
+
+Confirmed with the user: the scoring/profile data logged just above predates this commit, so none of it reflects the fork change. Not yet reviewed by me. Given `doom/d_main.c`/`doom/launcher.c` were explicitly out of this session's scope (reserved for the shelved plan, per the original handoff), and this landed on the same shared `lucas` branch this session has been committing renderer changes to, next step is deciding whether I should review/verify this before anything else, or stay on the renderer/profiling track while it's validated separately.
