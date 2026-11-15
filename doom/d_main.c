@@ -312,14 +312,21 @@ void D_Display (void)
 
     do
     {
-	do
-	{
-	    nowtime = I_GetTime ();
-	    tics = nowtime - wipestart;
-            I_Sleep(1);
-	} while (tics <= 0);
-        
-	wipestart = nowtime;
+        if (timingdemo)
+        {
+            // timedemo: no wall-clock wait between melt steps, every step is still drawn
+            tics = 1;
+        }
+        else
+        {
+            do
+            {
+                nowtime = I_GetTime();
+                tics = nowtime - wipestart;
+                I_Sleep(1);
+            } while (tics <= 0);
+            wipestart = nowtime;
+        }
 	done = wipe_ScreenWipe(wipe_Melt
 			       , 0, 0, SCREENWIDTH, SCREENHEIGHT, tics);
 	I_UpdateNoBlit ();

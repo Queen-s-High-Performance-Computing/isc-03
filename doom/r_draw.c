@@ -604,13 +604,15 @@ int			dscount;
 
 //
 // Draws the actual span.
-void R_DrawSpan (void) 
-{ 
+void R_DrawSpan (void)
+{
     unsigned int position, step;
     byte *dest;
     int count;
     int spot;
     unsigned int xtemp, ytemp;
+    const byte *source;
+    const lighttable_t *colormap;
 
 #ifdef RANGECHECK
     if (ds_x2 < ds_x1
@@ -636,10 +638,47 @@ void R_DrawSpan (void)
 
     dest = ylookup[ds_y] + columnofs[ds_x1];
 
+    // The framebuffer stores cannot change these pointers during a span.
+    // Keep local copies so byte writes do not force per-pixel global reloads.
+    source = ds_source;
+    colormap = ds_colormap;
+
     // We do not check for zero spans here?
     count = ds_x2 - ds_x1;
 
-    do
+    // Draw four pixels per iteration to reduce loop-control overhead.
+    // The scalar tail handles short spans and any remaining pixels.
+    ++count;
+    while (count >= 4)
+    {
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
+	dest[0] = colormap[source[spot]];
+	position += step;
+
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
+	dest[1] = colormap[source[spot]];
+	position += step;
+
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
+	dest[2] = colormap[source[spot]];
+	position += step;
+
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
+	dest[3] = colormap[source[spot]];
+	position += step;
+
+	dest += 4;
+	count -= 4;
+    }
+    while (count-- > 0)
     {
 	// Calculate current texture index in u,v.
         ytemp = (position >> 4) & 0x0fc0;
@@ -648,11 +687,10 @@ void R_DrawSpan (void)
 
 	// Lookup pixel from flat texture tile,
 	//  re-index using light/colormap.
-	*dest++ = ds_colormap[ds_source[spot]];
+	*dest++ = colormap[source[spot]];
 
         position += step;
-
-    } while (count--);
+    }
 }
 
 

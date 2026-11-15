@@ -207,6 +207,21 @@ void R_RenderSegLoop (void)
     int			top;
     int			bottom;
 
+    // R_StoreWallRange sets these once before calling us and never touches
+    // them again; they're read-only here. But colfunc()/R_GetColumn are
+    // called through this loop, and the compiler can't prove those calls
+    // don't write to file-scope globals, so it must reload and re-check
+    // each one every rw_x even though they can't actually change. Snapshot
+    // them into locals (whose address never escapes) so the compiler can
+    // see they're genuinely loop-invariant.
+    const boolean	l_segtextured   = segtextured;
+    const boolean	l_markfloor     = markfloor;
+    const boolean	l_markceiling   = markceiling;
+    const int		l_midtexture    = midtexture;
+    const int		l_toptexture    = toptexture;
+    const int		l_bottomtexture = bottomtexture;
+    const boolean	l_maskedtexture = maskedtexture;
+
     for ( ; rw_x < rw_stopx ; rw_x++)
     {
 	// mark floor / ceiling areas
@@ -215,8 +230,8 @@ void R_RenderSegLoop (void)
 	// no space above wall?
 	if (yl < ceilingclip[rw_x]+1)
 	    yl = ceilingclip[rw_x]+1;
-	
-	if (markceiling)
+
+	if (l_markceiling)
 	{
 	    top = ceilingclip[rw_x]+1;
 	    bottom = yl-1;
@@ -230,13 +245,13 @@ void R_RenderSegLoop (void)
 		ceilingplane->bottom[rw_x] = bottom;
 	    }
 	}
-		
+
 	yh = bottomfrac>>HEIGHTBITS;
 
 	if (yh >= floorclip[rw_x])
 	    yh = floorclip[rw_x]-1;
 
-	if (markfloor)
+	if (l_markfloor)
 	{
 	    top = yh+1;
 	    bottom = floorclip[rw_x]-1;
@@ -248,9 +263,9 @@ void R_RenderSegLoop (void)
 		floorplane->bottom[rw_x] = bottom;
 	    }
 	}
-	
+
 	// texturecolumn and lighting are independent of wall tiers
-	if (segtextured)
+	if (l_segtextured)
 	{
 	    // calculate texture offset
 	    angle = (rw_centerangle + xtoviewangle[rw_x])>>ANGLETOFINESHIFT;
@@ -272,15 +287,15 @@ void R_RenderSegLoop (void)
 
             texturecolumn = 0;
         }
-	
+
 	// draw the wall tiers
-	if (midtexture)
+	if (l_midtexture)
 	{
 	    // single sided line
 	    dc_yl = yl;
 	    dc_yh = yh;
 	    dc_texturemid = rw_midtexturemid;
-	    dc_source = R_GetColumn(midtexture,texturecolumn);
+	    dc_source = R_GetColumn(l_midtexture,texturecolumn);
 	    colfunc ();
 	    ceilingclip[rw_x] = viewheight;
 	    floorclip[rw_x] = -1;
@@ -288,7 +303,7 @@ void R_RenderSegLoop (void)
 	else
 	{
 	    // two sided line
-	    if (toptexture)
+	    if (l_toptexture)
 	    {
 		// top wall
 		mid = pixhigh>>HEIGHTBITS;
@@ -302,7 +317,7 @@ void R_RenderSegLoop (void)
 		    dc_yl = yl;
 		    dc_yh = mid;
 		    dc_texturemid = rw_toptexturemid;
-		    dc_source = R_GetColumn(toptexture,texturecolumn);
+		    dc_source = R_GetColumn(l_toptexture,texturecolumn);
 		    colfunc ();
 		    ceilingclip[rw_x] = mid;
 		}
@@ -312,11 +327,11 @@ void R_RenderSegLoop (void)
 	    else
 	    {
 		// no top wall
-		if (markceiling)
+		if (l_markceiling)
 		    ceilingclip[rw_x] = yl-1;
 	    }
-			
-	    if (bottomtexture)
+
+	    if (l_bottomtexture)
 	    {
 		// bottom wall
 		mid = (pixlow+HEIGHTUNIT-1)>>HEIGHTBITS;
@@ -325,13 +340,13 @@ void R_RenderSegLoop (void)
 		// no space above wall?
 		if (mid <= ceilingclip[rw_x])
 		    mid = ceilingclip[rw_x]+1;
-		
+
 		if (mid <= yh)
 		{
 		    dc_yl = mid;
 		    dc_yh = yh;
 		    dc_texturemid = rw_bottomtexturemid;
-		    dc_source = R_GetColumn(bottomtexture,
+		    dc_source = R_GetColumn(l_bottomtexture,
 					    texturecolumn);
 		    colfunc ();
 		    floorclip[rw_x] = mid;
@@ -342,18 +357,18 @@ void R_RenderSegLoop (void)
 	    else
 	    {
 		// no bottom wall
-		if (markfloor)
+		if (l_markfloor)
 		    floorclip[rw_x] = yh+1;
 	    }
-			
-	    if (maskedtexture)
+
+	    if (l_maskedtexture)
 	    {
 		// save texturecol
 		//  for backdrawing of masked mid texture
 		maskedtexturecol[rw_x] = texturecolumn;
 	    }
 	}
-		
+
 	rw_scale += rw_scalestep;
 	topfrac += topstep;
 	bottomfrac += bottomstep;

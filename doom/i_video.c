@@ -136,6 +136,8 @@ static uint16_t rgb565_palette[256];
 // redo this packing for every pixel of every tic. Only valid for 32bpp;
 // rebuilt whenever I_SetPalette runs.
 static uint32_t packed_colors[256];
+// Two horizontal copies, rebuilt with packed_colors on every palette change.
+static uint64_t doubled_colors[256];
 
 void cmap_to_rgb565(uint16_t * out, uint8_t * in, int in_pixels)
 {
@@ -172,8 +174,7 @@ void cmap_to_fb(uint8_t *out, uint8_t *in, int in_pixels)
         uint64_t *out64 = (uint64_t *)out;
         for (i = 0; i < in_pixels; i++)
         {
-            uint64_t p = packed_colors[in[i]];
-            out64[i] = p | (p << 32);
+            out64[i] = doubled_colors[in[i]];
         }
         return;
     }
@@ -331,11 +332,61 @@ void I_UpdateNoBlit (void)
 // I_FinishUpdate
 //
 
+#ifndef CMAP256
+static void finish_update_2x(void)
+{
+    const byte *in = I_VideoBuffer;
+    byte *out = (byte *)DG_ScreenBuffer;
+    const size_t row_bytes = SCREENWIDTH * 2 * sizeof(uint32_t);
+
+    for (int y = 0; y < SCREENHEIGHT; ++y)
+    {
+        byte *row0 = out;
+        int x = 0;
+
+        // Independent lookups let the compiler overlap work across pixels.
+        for (; x + 4 <= SCREENWIDTH; x += 4)
+        {
+            uint64_t p0 = doubled_colors[in[x]];
+            uint64_t p1 = doubled_colors[in[x + 1]];
+            uint64_t p2 = doubled_colors[in[x + 2]];
+            uint64_t p3 = doubled_colors[in[x + 3]];
+            memcpy(row0, &p0, sizeof p0);
+            memcpy(row0 + 8, &p1, sizeof p1);
+            memcpy(row0 + 16, &p2, sizeof p2);
+            memcpy(row0 + 24, &p3, sizeof p3);
+            row0 += 32;
+        }
+        for (; x < SCREENWIDTH; ++x)
+        {
+            uint64_t p = doubled_colors[in[x]];
+            memcpy(row0, &p, sizeof p);
+            row0 += 8;
+        }
+        // Converting once and copying the row beat writing both rows directly.
+        memcpy(out + row_bytes, out, row_bytes);
+        in += SCREENWIDTH;
+        out += row_bytes * 2;
+    }
+}
+#endif
+
 void I_FinishUpdate (void)
 {
     int y;
     int x_offset, y_offset, x_offset_end;
     unsigned char *line_in, *line_out;
+
+#ifndef CMAP256
+    // The default full-frame layout needs no generic scaling/offset handling.
+    if (s_Fb.bits_per_pixel == 32 && fb_scaling == 2
+        && s_Fb.xres == SCREENWIDTH * 2 && s_Fb.yres == SCREENHEIGHT * 2)
+    {
+        finish_update_2x();
+        DG_DrawFrame();
+        return;
+    }
+#endif
 
     /* Offsets in case FB is bigger than DOOM */
     /* 600 = s_Fb heigt, 200 screenheight */
@@ -440,6 +491,7 @@ void I_SetPalette (byte* palette)
             pix = swapLE32(pix);
 #endif
             packed_colors[i] = pix;
+            doubled_colors[i] = (uint64_t)pix | ((uint64_t)pix << 32);
         }
     }
 
