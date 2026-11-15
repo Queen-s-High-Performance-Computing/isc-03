@@ -17,7 +17,15 @@ ROOT=${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
 module load gcc
 
 cd "$ROOT/doom"
-perf record -g -o "$ROOT/perf.data" -- ./doomgeneric -iwad "$ROOT/freedoom1.wad" -timedemo "$DEMO"
+# A normal, successful -timedemo run still ends by calling I_Error (it's how
+# this engine reports its own fps), which always exit(-1)s -- status 255.
+# perf record propagates that, so under `set -e` the script died right here
+# every time, before ever reaching `perf report` below.
+status=0
+perf record -g -o "$ROOT/perf.data" -- ./doomgeneric -iwad "$ROOT/freedoom1.wad" -timedemo "$DEMO" || status=$?
+if [[ $status != 0 && $status != 255 ]]; then
+    exit "$status"
+fi
 perf report -i "$ROOT/perf.data" --stdio > "$ROOT/perf-report.txt"
 
 echo "Report written to $ROOT/perf-report.txt"
