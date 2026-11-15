@@ -38,6 +38,10 @@ void D_PageDrawer (void);
 void D_AdvanceDemo (void);
 void D_DoAdvanceDemo (void);
 void D_StartTitle (void);
+
+// The per-repetition tail of D_DoomMain(), split out so launcher.c can
+// call it once per forked child (see doom/launcher.c).
+void D_DoomMain_PlayDemo (void);
  
 //
 // GLOBAL VARIABLES
