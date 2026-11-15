@@ -250,3 +250,24 @@ Ran it locally (macOS/clang/arm64, same `-Wl,-dead_strip` substitution for `--gc
 Cluster verification via `score.sh` is pending, same pattern as the prior two changes.
 
 Next: once cluster access is available, `sbatch testing/test.sh`, compare demo1/2/3 against the 158/157/146 baseline above, and get a fresh `perf-report.txt` to see whether `R_DrawSpan`'s self-% dropped.
+
+## Cluster verification — `R_DrawSpan`
+
+```
+Scoring demo1: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 162 valid demos, 0 invalid
+SCORE: 162 valid demo1 demos in 30s (median of 1)
+Scoring demo2: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 163 valid demos, 0 invalid
+SCORE: 163 valid demo2 demos in 30s (median of 1)
+Scoring demo3: 1 run(s) of 30s on frnt201.frontenac.local, 16 CPUs
+  run 1: 146 valid demos, 0 invalid
+SCORE: 146 valid demo3 demos in 30s (median of 1)
+timed 7117 gametics in 78 realtics (3193.525635 fps)
+```
+
+**demo1: 162/0** (up from 158, +4, +2.5%), **demo2: 163/0** (up from 157, +6, +3.8%), **demo3: 146/0** (unchanged from 146 — the prior dip held steady rather than bouncing back, suggesting it wasn't pure noise after all, just not something this change affects either way). All still 0 invalid.
+
+Running total since the original 64/0 baseline: demo1 2.53x, demo2 2.55x, demo3 2.28x. Same log-gap as before — the job's captured stdout doesn't show the `perf report`/"Report written to..." lines, just the profiled run's own completion; `perf-report.txt` should still exist on the cluster filesystem for a direct `cat` next time.
+
+Next: grab `perf-report.txt` to see `R_DrawSpan`'s self-% movement, then decide between `I_FinishUpdate` (still the largest hotspot, harder residual) or calling it here for now and testing at full-node scale (64 cores/128 threads) per the original handoff's still-open item — all measurements to date have been at 16 CPUs only.
