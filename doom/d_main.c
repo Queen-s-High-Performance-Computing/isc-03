@@ -116,6 +116,12 @@ boolean		advancedemo;
 // Store demo, do not accept any inputs
 boolean         storedemo;
 
+// Name of the demo lump to play, set once while parsing argv in
+// D_DoomMain(). Hoisted to file scope (was a D_DoomMain() local) so it
+// stays valid for D_DoomMain_PlayDemo(), which D_DoomMain() no longer
+// calls itself -- callers invoke it once per forked child.
+static char     demolumpname[9];
+
 // "BFG Edition" version of doom2.wad does not include TITLEPIC.
 boolean         bfgedition;
 
@@ -1171,7 +1177,6 @@ void D_DoomMain (void)
 {
     int p;
     char file[256];
-    char demolumpname[9];
 #if ORIGCODE
     int numiwadlumps;
 #endif
@@ -1786,6 +1791,28 @@ void D_DoomMain (void)
 
     DEH_printf("ST_Init: Init status bar.\n");
     ST_Init ();
+
+    // Everything above is deterministic, run-independent setup (WAD load,
+    // texture/sound precache, lookup tables) -- paid once per process.
+    // Everything that follows (demo dispatch, D_DoomLoop) is split into
+    // D_DoomMain_PlayDemo() below, so launcher.c can call it once per
+    // forked child instead of once per freshly exec()'d process.
+}
+
+//
+// D_DoomMain_PlayDemo
+//
+// The per-repetition tail of D_DoomMain(): demo/game dispatch and the
+// doom loop. Split out so it can be called again, cheaply, in each
+// process forked off the state D_DoomMain() already built -- see
+// launcher.c. Not reentrant within a single process (it drives gameaction
+// to completion, which ends the process via I_Error/exit), so each call
+// site must be a freshly forked child, not a loop within one process.
+//
+void D_DoomMain_PlayDemo (void)
+{
+    int p;
+    char file[256];
 
     // If Doom II without a MAP01 lump, this is a store demo.
     // Moved this here so that MAP01 isn't constantly looked up
