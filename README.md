@@ -123,8 +123,7 @@ or `bash scripts/run-callgrind.sh demo1`.
 
 ### Submission summary
 
-- **Best score:** TODO, fill in after `scripts/score.sh <demo> 120 3` on the
-  full node (say which demo).
+- **Best score:** 1064 valid demos, 0 invalid, on demo2 in 120sec.
 - **What we changed and why it helped:** see the table above and
   [CHANGES.md](CHANGES.md).
 - **What limits us now:** CPU time in rendering and in `I_FinishUpdate`, which
