@@ -116,6 +116,7 @@ Full write-up, with how each change works and what it measured:
 | Loop-invariant flags copied to locals | `r_segs.c` (`R_RenderSegLoop`) | frnt201 demo1: 150 -> 158 |
 | `-nogui` (no zenity shell at the end of every demo) | `scripts/run.sh` | small |
 | No real-time wait in the screen melt during timedemo | `d_main.c` | ~57-59% less wall time per demo (local) |
+| Fork a copy-on-write child per demo instead of `exec()`ing a new process | `launcher.c`, `d_main.c`, `d_main.h` | small, uncertain (see CHANGES.md) |
 
 Tests: `bash testing/test_drawcolumn.sh`, `bash testing/test_drawspan.sh`,
 `bash testing/test_finishupdate.sh`. Profiling: `bash scripts/run-perf.sh demo1`
@@ -123,7 +124,7 @@ or `bash scripts/run-callgrind.sh demo1`.
 
 ### Submission summary
 
-- **Best score:** 1064 valid demos, 0 invalid, on demo2 in 120sec.
+- **Best score:** 1063 valid demos, 0 invalid, on demo2 in 120s (median of 3; demo1: 1036, demo3: 991, both also median of 3, 0 invalid).
 - **What we changed and why it helped:** see the table above and
   [CHANGES.md](CHANGES.md).
 - **What limits us now:** CPU time in rendering and in `I_FinishUpdate`, which
@@ -135,7 +136,14 @@ or `bash scripts/run-callgrind.sh demo1`.
 
 We used OpenAI Codex and Claude Code to help profile, write the test harnesses,
 implement and benchmark the I_FinishUpdate and R_DrawColumn changes, and find
-the melt wait.
+the melt wait. Claude Code also designed and implemented the fork-based demo
+restart (`launcher.c`/`d_main.c`/`d_main.h`): tracing `D_DoomMain()`'s init
+sequence to find a safe fork point, auditing the engine for fork-unsafe
+resources (threads, signal handlers, timers, open file descriptors — found
+none except the WAD/demo file descriptors), designing the function split and
+`launcher.c` rewrite (catching a dangling-pointer bug in `demolumpname`
+before it shipped), and writing the validation script (`testing/test2.sh`)
+used to produce the scores above.
 
 ## Common problems
 

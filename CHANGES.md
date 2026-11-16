@@ -203,6 +203,40 @@ popup.
 Also note: because of this, a successful demo exits with status 255, not 0.
 Our scripts treat 255 as normal.
 
+### 11. Fork instead of exec for demo restart (`doom/launcher.c`, `doom/d_main.c`, `doom/d_main.h`)
+
+Each copy used to restart Doom by `exec()`-ing a brand-new process for every
+single demo repetition, which re-did the IWAD load and the texture/sound/
+lookup-table build (`R_Init`/`P_Init`/`S_Init`/`HU_Init`/`ST_Init`) from
+scratch every time, even though none of that varies between repetitions of
+the same demo.
+
+We split `D_DoomMain()` right after `ST_Init()` into that one-time setup and
+a new `D_DoomMain_PlayDemo()` holding everything after it (demo dispatch and
+the doom loop). `launcher.c` now runs the setup once, then `fork()`s a
+copy-on-write child per demo repetition instead of `exec()`-ing a new
+process: each child inherits the already-loaded WAD/texture/sound state for
+free and just plays one demo before exiting the way the engine always has
+(`G_CheckDemoStatus` -> `I_Error` -> `exit(-1)`). The parent waits for each
+child before forking the next, which is required, not just tidy: the
+WAD/demo file descriptors are shared across the fork, and the WAD reader's
+`fseek`+`fread` pairs are only race-free with one reader at a time.
+
+How much this is actually worth is capped by the number below it: per-demo
+startup was already measured at only ~9 ms (see "Where the time goes now"),
+so over a 120 s run this saves at most a few percent, not a multiplier --
+and we don't have a clean isolated before/after on `cluster-ready` to point
+to a firmer number, since this landed alongside the renderer changes above.
+We kept it anyway because it's free (same correctness, no new failure mode:
+same process-group shape, so the scorer's group-kill still reaches every
+forked child) and strictly removes work, it just isn't the main reason the
+score moved.
+
+What it doesn't do: increase parallelism. Only one child plays at a time per
+copy, same as the baseline -- running several children concurrently per copy
+would need the WAD/demo files reopened fresh in each child first, to avoid
+racing their shared file descriptors. Not done; not needed for the win above.
+
 ## Where the time goes now
 
 Local gprof, demo1, all changes except the melt fix (which doesn't change CPU
@@ -219,7 +253,8 @@ time):
 
 I_FinishUpdate is still the biggest, because it has to write 1 MB per frame
 whatever we do. Startup (WAD loading etc.) is only ~9 ms per demo, so running
-several demos per process wouldn't gain much.
+several demos per process (change 11) only has a small ceiling on what it
+can save.
 
 ## Ideas not done yet
 
